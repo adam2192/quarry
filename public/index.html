@@ -6,7 +6,7 @@
 <title>QUARRY — hunters &amp; prey</title>
 <meta name="theme-color" content="#060907" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="style.css" />
 </head>
@@ -16,8 +16,12 @@
   <!-- ============================================================ LANDING -->
   <section id="screen-landing" class="screen landing">
     <div class="landing-inner">
-      <div class="wordmark"><span class="brand">QUAR<span>RY</span></span></div>
-      <div class="tagline">a hunt run on silence, broken on a timer</div>
+      <div class="lock-on">
+        <span class="corner tl"></span><span class="corner tr"></span>
+        <span class="corner bl"></span><span class="corner br"></span>
+        <div class="wordmark"><span class="brand">QUAR<span>RY</span></span></div>
+      </div>
+      <div class="tagline">invisible until the signal breaks</div>
 
       <div class="mode-toggle">
         <button id="tab-join" class="active" type="button">Join a hunt</button>
