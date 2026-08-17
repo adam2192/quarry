@@ -55,7 +55,7 @@ const num = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v : 
 
 function log(room, msg, kind = 'info') {
   room.log.unshift({ at: Date.now(), msg, kind });
-  room.log.length = Math.min(room.log.length, 60);
+  room.log.length = Math.min(room.log.length, 300); // plenty of room for a full-hunt recap
 }
 
 // ------------------------------------------------------------------- rooms
@@ -91,6 +91,8 @@ function addPlayer(room, name) {
     live: null,      // { lat, lng, acc, at }  — private, server-side only
     shown: null,     // { lat, lng, acc, at }  — last publicly revealed fix
     prevShown: null,
+    trail: [],        // full continuous path this hunt — private until the hunt ends
+    finalRole: null,  // role at the moment the hunt ended, for the recap legend
     joinedAt: Date.now(),
   };
   room.players.set(player.id, player);
@@ -101,6 +103,9 @@ function addPlayer(room, name) {
 const living = (room, role) =>
   [...room.players.values()].filter((p) => p.alive && (!role || p.role === role));
 
+const TRAIL_MIN_GAP_MS = 10000; // one trail point at most every 10s per player
+const TRAIL_MAX_POINTS = 1000;
+
 // ---------------------------------------------------------------- the game
 
 function startGame(room) {
@@ -109,6 +114,7 @@ function startGame(room) {
 
   room.status = 'running';
   room.startedAt = now;
+  room.endedAt = null;
   room.nextPreyReveal = null;
   room.nextHunterReveal = null;
   room.outcome = null;
@@ -116,6 +122,7 @@ function startGame(room) {
     p.shown = null;
     p.prevShown = null;
     p.alive = true;
+    p.trail = [];
   }
   log(room, 'Hunt started. Everyone hide — the host sends the first ping when ready.', 'big');
   return null;
@@ -137,6 +144,8 @@ function reveal(room, group, note) {
 function endGame(room, outcome, note) {
   room.status = 'over';
   room.outcome = outcome;
+  room.endedAt = Date.now();
+  for (const p of room.players.values()) p.finalRole = p.role;
   reveal(room, 'all');
   log(room, note, 'big');
 }
@@ -211,6 +220,7 @@ setInterval(tick, TICK_MS);
 
 function viewFor(room, me) {
   const now = Date.now();
+  const over = room.status === 'over';
   return {
     type: 'state',
     serverNow: now,
@@ -220,15 +230,20 @@ function viewFor(room, me) {
       settings: room.settings,
       hostId: room.hostId,
       startedAt: room.startedAt,
+      endedAt: room.endedAt,
       nextPreyReveal: room.nextPreyReveal,
       nextHunterReveal: room.nextHunterReveal,
       lastReveal: room.lastReveal || null,
       outcome: room.outcome,
-      log: room.log.slice(0, 12),
+      // The in-game HUD only needs recent events; the post-hunt recap wants
+      // the whole story, so send everything once the hunt is over. Always
+      // newest-first — the recap view reverses it for a chronological read.
+      log: over ? room.log.slice() : room.log.slice(0, 12),
       players: [...room.players.values()].map((p) => ({
         id: p.id,
         name: p.name,
         role: p.role,
+        finalRole: p.finalRole,
         alive: p.alive,
         connected: p.connected,
         isHost: p.id === room.hostId,
@@ -236,6 +251,9 @@ function viewFor(room, me) {
         // Never send a live position. Only what the room has earned.
         shown: p.shown || null,
         prevShown: p.prevShown || null,
+        // The full path is only for the after-action recap — withheld
+        // entirely while the hunt is still live.
+        trail: over ? p.trail : undefined,
       })),
     },
     you: { id: me.id, name: me.name, role: me.role, alive: me.alive, isHost: me.id === room.hostId },
@@ -311,7 +329,17 @@ wss.on('connection', (ws) => {
         const lat = num(msg.lat, null);
         const lng = num(msg.lng, null);
         if (lat === null || lng === null) break;
-        me.live = { lat, lng, acc: clamp(num(msg.acc, 0), 0, 5000), at: Date.now() };
+        const now = Date.now();
+        me.live = { lat, lng, acc: clamp(num(msg.acc, 0), 0, 5000), at: now };
+        // Record the full path for the post-hunt recap — but only while a
+        // hunt is actually running, and never sent to anyone until it ends.
+        if (room.status === 'running') {
+          const last = me.trail[me.trail.length - 1];
+          if (!last || now - last.at >= TRAIL_MIN_GAP_MS) {
+            me.trail.push({ lat, lng, at: now });
+            if (me.trail.length > TRAIL_MAX_POINTS) me.trail.shift();
+          }
+        }
         // Deliberately no broadcast: a location update must not leak timing.
         break;
       }
