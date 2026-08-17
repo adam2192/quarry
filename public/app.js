@@ -213,10 +213,8 @@
     return `
       <div class="section-title">How it's set up</div>
       <div class="locked-note">
-        Reveal every ${fmtMinSec(s.preyRevealSec)} (prey) / ${fmtMinSec(s.hunterRevealSec)} (hunters) ·
-        catch at ${s.catchRadiusM} m ·
-        ${s.durationMin ? `${s.durationMin} min hunt` : 'no time limit'} ·
-        ${s.headStartSec ? `${fmtMinSec(s.headStartSec)} head start` : 'no head start'}
+        Once pinging starts: reveal every ${fmtMinSec(s.preyRevealSec)} (prey) / ${fmtMinSec(s.hunterRevealSec)} (hunters) ·
+        no time limit — the host ends it manually
       </div>`;
   }
 
@@ -236,26 +234,8 @@
             <button data-dir="-1">−</button><div class="val">${fmtMinSec(s.hunterRevealSec)}</div><button data-dir="1">+</button>
           </div>
         </div>
-        <div class="field">
-          <label>Catch radius</label>
-          <div class="stepper" data-stepper="catchRadiusM" data-step="5" data-min="5" data-max="500">
-            <button data-dir="-1">−</button><div class="val">${s.catchRadiusM} m</div><button data-dir="1">+</button>
-          </div>
-        </div>
-        <div class="field">
-          <label>Head start</label>
-          <div class="stepper" data-stepper="headStartSec" data-step="30" data-min="0" data-max="1800">
-            <button data-dir="-1">−</button><div class="val">${s.headStartSec ? fmtMinSec(s.headStartSec) : 'None'}</div><button data-dir="1">+</button>
-          </div>
-        </div>
-        <div class="field">
-          <label>Hunt length</label>
-          <div class="stepper" data-stepper="durationMin" data-step="5" data-min="0" data-max="240" data-unit="min">
-            <button data-dir="-1">−</button><div class="val">${s.durationMin ? s.durationMin + ' min' : 'No limit'}</div><button data-dir="1">+</button>
-          </div>
-        </div>
-        <div class="field">
-          <label>When a hunter catches prey</label>
+        <div class="field full">
+          <label>When a hunter logs a catch</label>
           <div class="segmented" data-segmented="onCatch">
             <button data-val="convert" class="${s.onCatch === 'convert' ? 'on' : ''}">Flips</button>
             <button data-val="swap" class="${s.onCatch === 'swap' ? 'on' : ''}">Swaps</button>
@@ -266,7 +246,7 @@
           <div class="toggle-row">
             <div>
               <div class="label">Reveal everyone on a catch</div>
-              <div class="sub">A tag pings the whole map immediately, not just the usual timer</div>
+              <div class="sub">Logging a catch pings the whole map immediately, not just the usual timer</div>
             </div>
             <label class="switch">
               <input type="checkbox" id="toggle-revealOnCatch" ${s.revealOnCatch ? 'checked' : ''} />
@@ -274,7 +254,8 @@
             </label>
           </div>
         </div>
-      </div>`;
+      </div>
+      <div class="locked-note">No time limit — pinging starts when you send the first ping in-game, and the hunt runs until you end it.</div>`;
   }
 
   function wireSettingsForm(s) {
@@ -370,8 +351,14 @@
     const wrap = els('timers');
     if (room.status !== 'running') { wrap.innerHTML = ''; return; }
 
-    if (now < room.releaseAt) {
-      wrap.innerHTML = timerCardHtml('hunter', 'Hunters deploy in', room.releaseAt - now, room.settings.headStartSec * 1000, false);
+    if (!room.nextPreyReveal && !room.nextHunterReveal) {
+      wrap.innerHTML = `
+        <div class="timer-card wait">
+          <div class="meta">
+            <div class="lbl">Standing by</div>
+            <div class="clk" style="font-size:13px;">Waiting for the first ping</div>
+          </div>
+        </div>`;
       return;
     }
 
@@ -425,38 +412,74 @@
 
   function renderBottomBar(room) {
     const bar = els('bottom-bar');
-    if (you.role === 'hunter' && you.alive) {
-      const now = serverNow();
-      const held = room.status === 'running' && now < room.releaseAt;
-      bar.innerHTML = `
-        <button class="tag-btn" id="btn-tag" ${room.status !== 'running' || held ? 'disabled' : ''}>
-          Tag nearest prey
-          <span class="sub">${held ? 'held until release' : `within ${room.settings.catchRadiusM} m`}</span>
-        </button>`;
-      const btn = els('btn-tag');
-      if (btn) btn.onclick = doTag;
-    } else if (!you.alive) {
-      bar.innerHTML = `<div class="waiting-note">You're out — still watching the map.</div>`;
-    } else {
-      bar.innerHTML = `<div class="waiting-note">Stay hidden. Your next ping is on the clock above.</div>`;
+    const awaitingPing = room.status === 'running' && !room.nextPreyReveal && !room.nextHunterReveal;
+    const rows = [];
+
+    if (you.isHost && awaitingPing) {
+      rows.push(`
+        <button class="tag-btn" id="btn-first-ping">
+          Send first ping
+          <span class="sub">reveals everyone now &amp; starts the timers</span>
+        </button>`);
     }
 
-    if (you.isHost) {
-      const extra = document.createElement('div');
-      if (room.status === 'running') {
-        extra.innerHTML = `<button class="icon-round" id="btn-end" title="End hunt">■</button>`;
-        bar.appendChild(extra.firstElementChild);
-        els('btn-end').onclick = () => { if (confirm('End the hunt now?')) send({ type: 'endGame' }); };
-      }
+    if (you.role === 'hunter' && you.alive) {
+      rows.push(`
+        <button class="tag-btn catch-btn" id="btn-catch" ${room.status !== 'running' ? 'disabled' : ''}>
+          Log a catch
+          <span class="sub">tap who you caught in person</span>
+        </button>`);
+    } else if (!you.alive) {
+      rows.push(`<div class="waiting-note">You're out — still watching the map.</div>`);
+    } else {
+      rows.push(`<div class="waiting-note">Stay hidden. Your next ping is on the clock above.</div>`);
+    }
+
+    bar.innerHTML = rows.map((r) => `<div class="bar-row">${r}</div>`).join('');
+
+    const pingBtn = els('btn-first-ping');
+    if (pingBtn) pingBtn.onclick = () => send({ type: 'revealNow' });
+    const catchBtn = els('btn-catch');
+    if (catchBtn) catchBtn.onclick = () => openCatchPicker(room);
+
+    if (you.isHost && room.status === 'running') {
+      const lastRow = bar.lastElementChild || bar;
+      const endBtn = document.createElement('button');
+      endBtn.className = 'icon-round';
+      endBtn.title = 'End hunt';
+      endBtn.textContent = '■';
+      endBtn.onclick = () => { if (confirm('End the hunt now?')) send({ type: 'endGame' }); };
+      if (bar.firstElementChild) bar.firstElementChild.appendChild(endBtn);
+      else bar.appendChild(endBtn);
     }
   }
 
-  let lastTagAt = 0;
-  function doTag() {
-    if (Date.now() - lastTagAt < 1500) return;
-    lastTagAt = Date.now();
-    send({ type: 'tag' });
-    if (navigator.vibrate) navigator.vibrate(40);
+  function openCatchPicker(room) {
+    if (document.getElementById('catch-overlay')) return;
+    const prey = room.players.filter((p) => p.role === 'prey' && p.alive);
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.id = 'catch-overlay';
+    overlay.innerHTML = `
+      <div class="overlay-card catch-card">
+        <div class="eyebrow">Log a catch</div>
+        <div class="catch-title">Who did you catch?</div>
+        <div class="catch-list">
+          ${prey.length ? prey.map((p) => `<button class="catch-row" data-pid="${p.id}">${escapeHtml(p.name)}</button>`).join('')
+            : '<div class="locked-note">No prey left to catch.</div>'}
+        </div>
+        <button class="btn btn-ghost btn-block" id="btn-catch-cancel">Cancel</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelectorAll('[data-pid]').forEach((btn) => {
+      btn.onclick = () => {
+        send({ type: 'catch', playerId: btn.dataset.pid });
+        if (navigator.vibrate) navigator.vibrate(40);
+        overlay.remove();
+      };
+    });
+    document.getElementById('btn-catch-cancel').onclick = () => overlay.remove();
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
   }
 
   function renderMarkers(room, prevRevealAt) {
