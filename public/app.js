@@ -151,7 +151,8 @@
 
     els('roster').innerHTML = players.map((p) => {
       const isHost = p.isHost;
-      const canManage = you.isHost && !isHost;
+      const canSetRole = you.isHost;       // host can set anyone's role, including their own
+      const canKick = you.isHost && !isHost; // but can't kick the host slot (themselves)
       return `
         <div class="roster-row">
           <div class="who">
@@ -159,12 +160,12 @@
             ${isHost ? '<span class="host-star">HOST</span>' : ''}
           </div>
           <div class="actions">
-            ${canManage ? `
+            ${canSetRole ? `
               <div class="role-switch">
                 <button data-role-btn="hunter" data-pid="${p.id}" class="${p.role === 'hunter' ? 'on hunter' : ''}">Hunter</button>
                 <button data-role-btn="prey" data-pid="${p.id}" class="${p.role === 'prey' ? 'on prey' : ''}">Prey</button>
               </div>
-              <button class="icon-btn" data-kick="${p.id}" title="Remove">✕</button>
+              ${canKick ? `<button class="icon-btn" data-kick="${p.id}" title="Remove">✕</button>` : ''}
             ` : `
               <span class="pill role-${p.role}"><span class="dot"></span>${p.role}</span>
             `}
