@@ -575,6 +575,24 @@
     );
   }
 
+  // Keeps the screen from auto-locking due to inactivity while the hunt is
+  // open — that's the single biggest cause of GPS silently going stale,
+  // since a locked screen stops location updates just like switching apps
+  // does. This can't help if someone deliberately leaves the tab; browsers
+  // don't allow websites to track location in the background at all.
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch { /* e.g. low-power mode — nothing to do, not critical */ }
+  }
+  document.addEventListener('visibilitychange', () => {
+    const onGame = !screens.game.classList.contains('hidden');
+    if (document.visibilityState === 'visible' && onGame) requestWakeLock();
+  });
+
   // ------------------------------------------------------------------ tick
 
   setInterval(() => { if (state && state.room.status === 'running') renderTimers(state.room); }, 1000);
@@ -591,6 +609,7 @@
     } else {
       showScreen('game');
       startGeo();
+      requestWakeLock();
       renderGame(prevRevealAt);
     }
   }
