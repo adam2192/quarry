@@ -273,7 +273,8 @@ wss.on('connection', (ws) => {
     if (msg.type === 'create') {
       const room = createRoom();
       const player = addPlayer(room, (msg.name || 'Player').trim() || 'Player');
-      player.role = 'hunter';
+      // No forced role — the host picks their own role in the lobby,
+      // same as everyone else.
       ws.roomCode = room.code;
       ws.playerId = player.id;
       log(room, `${player.name} opened the room.`);
