@@ -141,15 +141,8 @@
 
   // ---------------------------------------------------------------- lobby
 
-  function renderLobby() {
-    const { room } = state;
-    els('lobby-code').textContent = room.code;
-    els('lobby-you').textContent = you.isHost ? `${you.name} · host` : you.name;
-
-    const players = room.players;
-    els('roster-count').textContent = players.length;
-
-    els('roster').innerHTML = players.map((p) => {
+  function rosterRowsHtml(players) {
+    return players.map((p) => {
       const isHost = p.isHost;
       const canSetRole = you.isHost;       // host can set anyone's role, including their own
       const canKick = you.isHost && !isHost; // but can't kick the host slot (themselves)
@@ -173,13 +166,27 @@
           </div>
         </div>`;
     }).join('');
+  }
 
-    els('roster').querySelectorAll('[data-role-btn]').forEach((btn) => {
+  function wireRosterRows(container) {
+    container.querySelectorAll('[data-role-btn]').forEach((btn) => {
       btn.onclick = () => send({ type: 'setRole', playerId: btn.dataset.pid, role: btn.dataset.roleBtn });
     });
-    els('roster').querySelectorAll('[data-kick]').forEach((btn) => {
+    container.querySelectorAll('[data-kick]').forEach((btn) => {
       btn.onclick = () => send({ type: 'kick', playerId: btn.dataset.kick });
     });
+  }
+
+  function renderLobby() {
+    const { room } = state;
+    els('lobby-code').textContent = room.code;
+    els('lobby-you').textContent = you.isHost ? `${you.name} · host` : you.name;
+
+    const players = room.players;
+    els('roster-count').textContent = players.length;
+
+    els('roster').innerHTML = rosterRowsHtml(players);
+    wireRosterRows(els('roster'));
 
     // shuffle control (host only)
     els('shuffle-wrap').innerHTML = you.isHost
@@ -201,11 +208,12 @@
     const hunters = players.filter((p) => p.role === 'hunter').length;
     const prey = players.filter((p) => p.role === 'prey').length;
     if (you.isHost) {
-      const canStart = hunters > 0 && prey > 0;
+      const canStart = players.length > 0;
+      const warn = players.length && (!hunters || !prey)
+        ? '<div class="locked-note">Heads up: no real hunt without at least one hunter and one prey — this will just be a solo test run.</div>' : '';
       els('lobby-actions').innerHTML = `
-        <button class="btn btn-primary btn-block" id="btn-start" ${canStart ? '' : 'disabled'}>
-          ${canStart ? 'Start the hunt' : 'Need 1+ hunter and 1+ prey'}
-        </button>`;
+        <button class="btn btn-primary btn-block" id="btn-start" ${canStart ? '' : 'disabled'}>Start the hunt</button>
+        ${warn}`;
       els('btn-start').onclick = () => send({ type: 'start' });
     } else {
       els('lobby-actions').innerHTML = `<div class="locked-note">Waiting on the host to start the hunt…</div>`;
@@ -341,6 +349,19 @@
     const spectating = room.players.filter((p) => p.role === 'spectator').length;
     els('alive-count').textContent = `${aliveHunters}H / ${alivePrey}P live` + (spectating ? ` · ${spectating} watching` : '');
 
+    const rosterBtn = els('btn-roster');
+    rosterBtn.classList.toggle('hidden', !you.isHost);
+    rosterBtn.textContent = `Players (${room.players.length})`;
+    rosterBtn.onclick = () => openRosterOverlay(room);
+    // Late joiners land here mid-hunt as prey by default — keep an open
+    // roster panel in sync so the host can assign them without hunting
+    // through menus.
+    const openRoster = document.getElementById('roster-overlay');
+    if (openRoster) {
+      openRoster.querySelector('.roster').innerHTML = rosterRowsHtml(room.players);
+      wireRosterRows(openRoster.querySelector('.roster'));
+    }
+
     renderTimers(room);
     renderLog(room);
     renderBottomBar(room);
@@ -458,6 +479,24 @@
       if (bar.firstElementChild) bar.firstElementChild.appendChild(endBtn);
       else bar.appendChild(endBtn);
     }
+  }
+
+  function openRosterOverlay(room) {
+    if (document.getElementById('roster-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.id = 'roster-overlay';
+    overlay.innerHTML = `
+      <div class="overlay-card roster-card">
+        <div class="eyebrow">Room ${room.code}</div>
+        <div class="catch-title">Players</div>
+        <div class="roster">${rosterRowsHtml(room.players)}</div>
+        <button class="btn btn-ghost btn-block" id="btn-roster-close">Close</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    wireRosterRows(overlay.querySelector('.roster'));
+    document.getElementById('btn-roster-close').onclick = () => overlay.remove();
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
   }
 
   function openCatchPicker(room) {
