@@ -450,6 +450,18 @@ input { font-family: inherit; }
 .result-overlay.prey .headline { color: var(--agent-blue); }
 .result-overlay .sub { color: var(--steel); font-size: 13px; margin-bottom: 22px; }
 
+.recap-panel {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 600;
+  background: rgba(9,11,13,0.96); backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line);
+  max-height: 62vh; display: flex; flex-direction: column;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+}
+.recap-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+.recap-title { font-family: var(--font-display); font-size: 19px; font-weight: 600; color: var(--paper); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 2px; }
+.recap-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.recap-timeline { overflow-y: auto; flex: 1; border-top: 1px solid var(--line-soft); padding-top: 8px; }
+
 @media (min-width: 720px) {
   .settings-grid { grid-template-columns: 1fr 1fr 1fr; }
   .timers { max-width: 420px; }
