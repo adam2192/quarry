@@ -319,19 +319,28 @@
 
   function ensureMap() {
     if (map) return;
-    map = L.map('map', { zoomControl: true, attributionControl: true }).setView([20, 0], 3);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap',
+    // zoomControl off: on mobile it collided with the HUD chips, and pinch
+    // does the job — same call the Google Maps app makes on a phone.
+    map = L.map('map', { zoomControl: false, attributionControl: true }).setView([20, 0], 3);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 20,
+      subdomains: 'abcd',
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
     }).addTo(map);
   }
 
   function markerIcon(cls, label) {
     return L.divIcon({
       className: '',
-      html: `<div class="mk ${cls}"><div class="ripple"></div><div class="core"></div>${label ? `<div class="label">${escapeHtml(label)}</div>` : ''}</div>`,
-      iconSize: [22, 22],
-      iconAnchor: [11, 11],
+      html: `<div class="mk ${cls}">
+        <span class="ripple"></span>
+        <span class="corner tl"></span><span class="corner tr"></span>
+        <span class="corner bl"></span><span class="corner br"></span>
+        <span class="core"></span>
+        ${label ? `<span class="label">${escapeHtml(label)}</span>` : ''}
+      </div>`,
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
     });
   }
 
@@ -362,7 +371,7 @@
     if (room.status !== 'running') { wrap.innerHTML = ''; return; }
 
     if (now < room.releaseAt) {
-      wrap.innerHTML = timerCardHtml('hunter', 'Hunters released in', room.releaseAt - now, room.settings.headStartSec * 1000, false);
+      wrap.innerHTML = timerCardHtml('hunter', 'Hunters deploy in', room.releaseAt - now, room.settings.headStartSec * 1000, false);
       return;
     }
 
@@ -465,14 +474,13 @@
       if (!rec) {
         const marker = L.marker(latlng, { icon: markerIcon(cls, p.name) }).addTo(map);
         const trail = L.polyline(p.prevShown ? [[p.prevShown.lat, p.prevShown.lng], latlng] : [latlng], {
-          color: p.role === 'hunter' ? '#ff7a3d' : '#4fc3ff', weight: 2, opacity: 0.35, dashArray: '2,6',
+          color: p.role === 'hunter' ? '#e8262f' : '#2f8fe6', weight: 2, opacity: 0.4, dashArray: '2,6',
         }).addTo(map);
         rec = { marker, trail, lastAt: p.shown.revealedAt };
         markers.set(p.id, rec);
       } else if (p.shown.revealedAt !== rec.lastAt) {
         rec.marker.setLatLng(latlng);
-        rec.marker.setIcon(markerIcon(cls + ' pinged', p.name));
-        setTimeout(() => rec.marker.setIcon(markerIcon(cls, p.name)), 50);
+        rec.marker.setIcon(markerIcon(cls, p.name)); // fresh mount replays the lock-on animation
         if (p.prevShown) rec.trail.setLatLngs([[p.prevShown.lat, p.prevShown.lng], latlng]);
         rec.lastAt = p.shown.revealedAt;
       }
