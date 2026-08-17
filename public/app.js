@@ -601,6 +601,30 @@
   // -------------------------------------------------------------- recap
 
   let recapLayer = null;
+  function haversineMeters(a, b) {
+    const R = 6371000;
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+    const la1 = toRad(a.lat), la2 = toRad(b.lat);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+  function trailDistanceMeters(trail) {
+    let d = 0;
+    for (let i = 1; i < trail.length; i++) d += haversineMeters(trail[i - 1], trail[i]);
+    return d;
+  }
+  function fmtMiles(m) {
+    const mi = m / 1609.344;
+    return mi < 0.1 ? `${Math.round(m * 3.28084)} ft` : `${mi.toFixed(2)} mi`;
+  }
+  function fmtDuration(ms) {
+    const totalMin = Math.max(0, Math.round(ms / 60000));
+    const h = Math.floor(totalMin / 60), m = totalMin % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m} min`;
+  }
+
   function openRecap(room) {
     if (document.getElementById('recap-panel')) return;
 
@@ -611,6 +635,12 @@
     recapLayer = L.layerGroup().addTo(map);
     const bounds = [];
     const withTrail = room.players.filter((p) => p.trail && p.trail.length > 1);
+    const stats = withTrail
+      .map((p) => ({ ...p, distanceM: trailDistanceMeters(p.trail) }))
+      .sort((a, b) => b.distanceM - a.distanceM);
+    const totalDistanceM = stats.reduce((sum, p) => sum + p.distanceM, 0);
+    const durationMs = room.startedAt ? (room.endedAt || Date.now()) - room.startedAt : 0;
+
     withTrail.forEach((p) => {
       const role = p.finalRole || p.role;
       const color = role === 'hunter' ? '#e8262f' : role === 'prey' ? '#2f8fe6' : '#7c8590';
@@ -635,18 +665,27 @@
       <div class="recap-top">
         <div>
           <div class="eyebrow">After-action recap</div>
-          <div class="recap-title">Full paths &amp; timeline</div>
+          <div class="recap-title">Stats &amp; timeline</div>
         </div>
         <button class="icon-round" id="btn-recap-close">✕</button>
       </div>
-      <div class="recap-legend">
-        ${withTrail.length ? withTrail.map((p) => `<span class="pill role-${p.finalRole || p.role}"><span class="dot"></span>${escapeHtml(p.name)}</span>`).join('')
-          : '<span class="locked-note">No movement was recorded this hunt.</span>'}
+      <div class="recap-summary">
+        ${room.startedAt ? `Hunt ran ${fmtDuration(durationMs)}` : 'Hunt ended'}${stats.length ? ` · ${fmtMiles(totalDistanceM)} covered combined` : ''}
       </div>
-      <div class="recap-timeline">
-        ${room.log.slice().reverse().map((l) => `
-          <div class="log-line ${l.kind}"><span class="t">${new Date(l.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>${escapeHtml(l.msg)}</div>
-        `).join('') || '<div class="log-line">No events logged.</div>'}
+      <div class="recap-body">
+        <div class="recap-stats">
+          ${stats.length ? stats.map((p) => `
+            <div class="recap-stat-row">
+              <span class="pill role-${p.finalRole || p.role}"><span class="dot"></span>${escapeHtml(p.name)}</span>
+              <span class="recap-dist">${fmtMiles(p.distanceM)}</span>
+            </div>`).join('') : '<div class="locked-note">No movement was recorded this hunt.</div>'}
+        </div>
+        <div class="recap-divider">Timeline</div>
+        <div class="recap-timeline">
+          ${room.log.slice().reverse().map((l) => `
+            <div class="log-line ${l.kind}"><span class="t">${new Date(l.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>${escapeHtml(l.msg)}</div>
+          `).join('') || '<div class="log-line">No events logged.</div>'}
+        </div>
       </div>`;
     document.body.appendChild(panel);
     document.getElementById('btn-recap-close').onclick = closeRecap;
