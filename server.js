@@ -127,6 +127,7 @@ function reveal(room, group, note) {
   const now = Date.now();
   for (const p of room.players.values()) {
     if (!p.alive || !p.live) continue;
+    if (p.role === 'spectator') continue; // spectators are never shown as map pins
     if (group !== 'all' && p.role !== group) continue;
     p.prevShown = p.shown;
     p.shown = { ...p.live, revealedAt: now };
@@ -334,7 +335,7 @@ wss.on('connection', (ws) => {
         const err = requireHost(room, me);
         if (err) return send(ws, { type: 'error', msg: err });
         const target = room.players.get(msg.playerId);
-        if (target && ['hunter', 'prey'].includes(msg.role)) {
+        if (target && ['hunter', 'prey', 'spectator'].includes(msg.role)) {
           target.role = msg.role;
           broadcast(room);
         }
@@ -344,7 +345,8 @@ wss.on('connection', (ws) => {
       case 'shuffle': {
         const err = requireHost(room, me);
         if (err) return send(ws, { type: 'error', msg: err });
-        const ids = [...room.players.keys()];
+        // Spectators sit out the shuffle entirely — only hunter/prey get reassigned.
+        const ids = [...room.players.values()].filter((p) => p.role !== 'spectator').map((p) => p.id);
         for (let i = ids.length - 1; i > 0; i--) {
           const j = crypto.randomInt(i + 1);
           [ids[i], ids[j]] = [ids[j], ids[i]];
