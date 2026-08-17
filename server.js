@@ -5,6 +5,10 @@
  * Phones stream their location here continuously, but the server only
  * *reveals* a position to the room when a reveal timer fires. That's the
  * whole game: you're invisible until the clock says otherwise.
+ *
+ * Catches are logged by honor system, not GPS: a hunter who catches
+ * someone in person taps that player's name in the app to convert them.
+ * There's no distance check — the app trusts the room.
  */
 
 const path = require('path');
@@ -16,7 +20,6 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 3000;
 const TICK_MS = 1000;
 const BROADCAST_EVERY_MS = 5000;   // heartbeat so "last seen" stays honest
-const STALE_FIX_MS = 90 * 1000;    // a location older than this can't be tagged with
 const ROOM_TTL_MS = 6 * 60 * 60 * 1000;
 
 const app = express();
@@ -30,13 +33,10 @@ const wss = new WebSocketServer({ server });
 const rooms = new Map();
 
 const defaultSettings = () => ({
-  preyRevealSec: 600,      // how often prey positions go public
-  hunterRevealSec: 600,    // how often hunter positions go public
-  catchRadiusM: 25,        // how close a hunter must be to tag
-  durationMin: 60,         // 0 = no time limit
-  headStartSec: 300,       // hunters are frozen this long after start
+  preyRevealSec: 600,      // how often prey positions go public, once pinging has begun
+  hunterRevealSec: 600,    // how often hunter positions go public, once pinging has begun
   onCatch: 'convert',      // convert | eliminate | swap
-  revealOnCatch: true,     // a tag reveals everyone immediately
+  revealOnCatch: true,     // logging a catch also reveals everyone immediately
 });
 
 // ---------------------------------------------------------------- utilities
@@ -48,17 +48,6 @@ function makeCode() {
     code = Array.from({ length: 4 }, () => alphabet[crypto.randomInt(alphabet.length)]).join('');
   } while (rooms.has(code));
   return code;
-}
-
-function metersBetween(a, b) {
-  const R = 6371000;
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const la1 = toRad(a.lat);
-  const la2 = toRad(b.lat);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -80,8 +69,8 @@ function createRoom() {
     players: new Map(),
     hostId: null,
     startedAt: null,
-    releaseAt: null,
-    endsAt: null,
+    // Both null until the host sends the first ping. No countdown, no
+    // automatic reveal — the clock only starts once the host says so.
     nextPreyReveal: null,
     nextHunterReveal: null,
     outcome: null,
@@ -122,36 +111,28 @@ function startGame(room) {
 
   room.status = 'running';
   room.startedAt = now;
-  room.releaseAt = now + room.settings.headStartSec * 1000;
-  room.endsAt = room.settings.durationMin ? now + room.settings.durationMin * 60000 : null;
-  // First reveal lands the moment hunters are released.
-  room.nextPreyReveal = room.releaseAt;
-  room.nextHunterReveal = room.releaseAt;
+  room.nextPreyReveal = null;
+  room.nextHunterReveal = null;
   room.outcome = null;
   for (const p of room.players.values()) {
     p.shown = null;
     p.prevShown = null;
     p.alive = true;
   }
-  log(room, room.settings.headStartSec
-    ? `Hunt started. Hunters held for ${Math.round(room.settings.headStartSec / 60)} min.`
-    : 'Hunt started.', 'big');
+  log(room, 'Hunt started. Everyone hide — the host sends the first ping when ready.', 'big');
   return null;
 }
 
 function reveal(room, group, note) {
   const now = Date.now();
-  let count = 0;
   for (const p of room.players.values()) {
     if (!p.alive || !p.live) continue;
     if (group !== 'all' && p.role !== group) continue;
     p.prevShown = p.shown;
     p.shown = { ...p.live, revealedAt: now };
-    count += 1;
   }
   room.lastReveal = { at: now, group };
   if (note) log(room, note, 'ping');
-  return count;
 }
 
 function endGame(room, outcome, note) {
@@ -161,44 +142,41 @@ function endGame(room, outcome, note) {
   log(room, note, 'big');
 }
 
-function attemptTag(room, hunter) {
+// The host-triggered "first ping" and any later manual reveal share this:
+// reveal everyone right now, then schedule the next automatic ping for
+// each faction from this moment.
+function sendPing(room, note) {
+  const now = Date.now();
+  reveal(room, 'all', note);
+  room.nextPreyReveal = now + room.settings.preyRevealSec * 1000;
+  room.nextHunterReveal = now + room.settings.hunterRevealSec * 1000;
+}
+
+function declareCatch(room, hunter, targetId) {
   if (room.status !== 'running') return 'The hunt is not running.';
-  if (hunter.role !== 'hunter') return 'Only hunters can tag.';
-  if (Date.now() < room.releaseAt) return 'You are still held. Wait for release.';
-  if (!hunter.live || Date.now() - hunter.live.at > STALE_FIX_MS) {
-    return 'No fresh GPS fix on your phone yet.';
-  }
+  if (hunter.role !== 'hunter') return 'Only hunters can log a catch.';
+  const target = room.players.get(targetId);
+  if (!target) return 'Player not found.';
+  if (target.role !== 'prey' || !target.alive) return `${target.name} isn't prey right now.`;
 
-  let best = null;
-  for (const p of living(room, 'prey')) {
-    if (!p.live || Date.now() - p.live.at > STALE_FIX_MS) continue;
-    const d = metersBetween(hunter.live, p.live);
-    if (!best || d < best.d) best = { p, d };
-  }
-  if (!best) return 'No prey with a live signal nearby.';
-  if (best.d > room.settings.catchRadiusM) {
-    return `Nearest prey is ${Math.round(best.d)} m away. You need ${room.settings.catchRadiusM} m.`;
-  }
-
-  const caught = best.p;
   const rule = room.settings.onCatch;
   if (rule === 'eliminate') {
-    caught.alive = false;
-    log(room, `${hunter.name} caught ${caught.name}. Out of the game.`, 'catch');
+    target.alive = false;
+    log(room, `${hunter.name} caught ${target.name}. Out of the game.`, 'catch');
   } else if (rule === 'swap') {
-    caught.role = 'hunter';
+    target.role = 'hunter';
     hunter.role = 'prey';
-    log(room, `${hunter.name} caught ${caught.name}. Roles swapped.`, 'catch');
+    log(room, `${hunter.name} caught ${target.name}. Roles swapped.`, 'catch');
   } else {
-    caught.role = 'hunter';
-    log(room, `${hunter.name} caught ${caught.name}. ${caught.name} is now a hunter.`, 'catch');
+    target.role = 'hunter';
+    log(room, `${hunter.name} caught ${target.name}. ${target.name} is now a hunter.`, 'catch');
   }
 
   if (room.settings.revealOnCatch) reveal(room, 'all');
 
   const preyLeft = living(room, 'prey').length;
   const huntersLeft = living(room, 'hunter').length;
-  if (!preyLeft) endGame(room, 'hunters', 'All prey are down. Hunters win.');
+  if (!preyLeft) endGame(room, 'hunters', 'All prey are caught. Hunters win.');
   else if (!huntersLeft) endGame(room, 'prey', 'No hunters left. Prey win.');
   return null;
 }
@@ -212,18 +190,16 @@ function tick() {
     }
     let dirty = false;
     if (room.status === 'running') {
-      if (now >= room.nextPreyReveal) {
-        const n = reveal(room, 'prey', 'Prey positions revealed.');
+      // No time limit, and no reveal until the host has sent the first
+      // ping — nextPreyReveal/nextHunterReveal stay null until then.
+      if (room.nextPreyReveal && now >= room.nextPreyReveal) {
+        reveal(room, 'prey', 'Prey positions revealed.');
         room.nextPreyReveal = now + room.settings.preyRevealSec * 1000;
-        if (n) dirty = true; else dirty = true;
-      }
-      if (now >= room.nextHunterReveal) {
-        reveal(room, 'hunter', 'Hunter positions revealed.');
-        room.nextHunterReveal = now + room.settings.hunterRevealSec * 1000;
         dirty = true;
       }
-      if (room.endsAt && now >= room.endsAt) {
-        endGame(room, 'prey', 'Time is up. Surviving prey win.');
+      if (room.nextHunterReveal && now >= room.nextHunterReveal) {
+        reveal(room, 'hunter', 'Hunter positions revealed.');
+        room.nextHunterReveal = now + room.settings.hunterRevealSec * 1000;
         dirty = true;
       }
     }
@@ -245,8 +221,6 @@ function viewFor(room, me) {
       settings: room.settings,
       hostId: room.hostId,
       startedAt: room.startedAt,
-      releaseAt: room.releaseAt,
-      endsAt: room.endsAt,
       nextPreyReveal: room.nextPreyReveal,
       nextHunterReveal: room.nextHunterReveal,
       lastReveal: room.lastReveal || null,
@@ -260,7 +234,6 @@ function viewFor(room, me) {
         connected: p.connected,
         isHost: p.id === room.hostId,
         isYou: p.id === me.id,
-        hasFix: !!p.live && now - p.live.at < STALE_FIX_MS,
         // Never send a live position. Only what the room has earned.
         shown: p.shown || null,
         prevShown: p.prevShown || null,
@@ -350,9 +323,6 @@ wss.on('connection', (ws) => {
         const inc = msg.settings || {};
         s.preyRevealSec = clamp(Math.round(num(inc.preyRevealSec, s.preyRevealSec)), 15, 3600);
         s.hunterRevealSec = clamp(Math.round(num(inc.hunterRevealSec, s.hunterRevealSec)), 15, 3600);
-        s.catchRadiusM = clamp(Math.round(num(inc.catchRadiusM, s.catchRadiusM)), 5, 500);
-        s.durationMin = clamp(Math.round(num(inc.durationMin, s.durationMin)), 0, 720);
-        s.headStartSec = clamp(Math.round(num(inc.headStartSec, s.headStartSec)), 0, 3600);
         if (['convert', 'eliminate', 'swap'].includes(inc.onCatch)) s.onCatch = inc.onCatch;
         if (typeof inc.revealOnCatch === 'boolean') s.revealOnCatch = inc.revealOnCatch;
         broadcast(room);
@@ -407,18 +377,19 @@ wss.on('connection', (ws) => {
       }
 
       case 'revealNow': {
+        // Doubles as "send the first ping" (when nothing's scheduled yet)
+        // and as a manual early reveal later in the hunt.
         const err = requireHost(room, me);
         if (err) return send(ws, { type: 'error', msg: err });
         if (room.status !== 'running') break;
-        reveal(room, 'all', `${me.name} called an early reveal.`);
-        room.nextPreyReveal = Date.now() + room.settings.preyRevealSec * 1000;
-        room.nextHunterReveal = Date.now() + room.settings.hunterRevealSec * 1000;
+        const isFirst = !room.nextPreyReveal && !room.nextHunterReveal;
+        sendPing(room, isFirst ? `${me.name} sent the first ping.` : `${me.name} called an early ping.`);
         broadcast(room);
         break;
       }
 
-      case 'tag': {
-        const problem = attemptTag(room, me);
+      case 'catch': {
+        const problem = declareCatch(room, me, msg.playerId);
         if (problem) return send(ws, { type: 'error', msg: problem });
         broadcast(room);
         break;
