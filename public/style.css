@@ -158,6 +158,7 @@ input { font-family: inherit; }
 }
 .pill.role-hunter { color: var(--imf-red); border-color: var(--imf-red-dim); }
 .pill.role-prey { color: var(--agent-blue); border-color: var(--agent-blue-dim); }
+.pill.role-spectator { color: var(--steel); border-color: var(--line); }
 .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
 .dot-live { display:inline-block; width:7px; height:7px; border-radius:50%; background: var(--agent-blue); box-shadow: 0 0 6px var(--agent-blue); }
@@ -247,6 +248,7 @@ input { font-family: inherit; }
 }
 .role-switch button.on.hunter { background: var(--imf-red-dim); color: var(--imf-red); }
 .role-switch button.on.prey { background: var(--agent-blue-dim); color: var(--agent-blue); }
+.role-switch button.on.spectator { background: var(--line); color: var(--paper); }
 .icon-btn { background: transparent; border: none; color: var(--steel); cursor: pointer; font-size: 16px; padding: 4px 6px; line-height: 1; }
 .icon-btn:hover { color: var(--imf-red); }
 
@@ -317,6 +319,7 @@ input { font-family: inherit; }
 .role-badge .r { font-family: var(--font-display); font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
 .role-badge.hunter .r { color: var(--imf-red); }
 .role-badge.prey .r { color: var(--agent-blue); }
+.role-badge.spectator .r { color: var(--steel); }
 .role-badge .n { font-size: 10px; color: var(--steel); font-family: var(--font-mono); }
 
 .timers { position: absolute; top: 60px; left: 12px; right: 12px; z-index: 500; display: flex; gap: 8px; pointer-events: none; }
