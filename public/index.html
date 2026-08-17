@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>QUARRY — hunters &amp; prey</title>
+<meta name="theme-color" content="#060907" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ============================================================ LANDING -->
+  <section id="screen-landing" class="screen landing">
+    <div class="landing-inner">
+      <div class="wordmark"><span class="brand">QUAR<span>RY</span></span></div>
+      <div class="tagline">a hunt run on silence, broken on a timer</div>
+
+      <div class="mode-toggle">
+        <button id="tab-join" class="active" type="button">Join a hunt</button>
+        <button id="tab-create" type="button">Start a hunt</button>
+      </div>
+
+      <div class="field">
+        <label for="name-input">Your name</label>
+        <input id="name-input" type="text" maxlength="16" placeholder="What the room sees" autocomplete="off" />
+      </div>
+
+      <div id="join-fields">
+        <div class="field">
+          <label for="code-input">Room code</label>
+          <input id="code-input" type="text" maxlength="4" placeholder="XXXX" autocomplete="off" style="text-transform:uppercase; letter-spacing:0.3em; font-size:22px; text-align:center;" />
+        </div>
+        <button id="btn-join" class="btn btn-primary btn-block" type="button">Join</button>
+      </div>
+
+      <div id="create-fields" class="hidden">
+        <p class="hint" style="margin-bottom:16px; color:var(--paper-dim); font-size:13px;">
+          You'll get a 4-letter code. Read it out, text it, whatever — everyone else uses it to join.
+        </p>
+        <button id="btn-create" class="btn btn-primary btn-block" type="button">Open a room</button>
+      </div>
+
+      <div id="landing-error" class="landing-error"></div>
+    </div>
+  </section>
+
+  <!-- ============================================================== LOBBY -->
+  <section id="screen-lobby" class="screen hidden">
+    <div class="topbar">
+      <div class="code-block">
+        <span class="eyebrow">Room</span>
+        <span class="code" id="lobby-code">----</span>
+      </div>
+      <span class="you-badge" id="lobby-you"></span>
+    </div>
+
+    <div class="lobby-body">
+      <div class="section-title">
+        <span>Hunters &amp; prey — <span id="roster-count">0</span></span>
+        <span id="shuffle-wrap"></span>
+      </div>
+      <div class="roster" id="roster"></div>
+
+      <div id="host-settings-wrap"></div>
+
+      <div class="lobby-actions" id="lobby-actions"></div>
+    </div>
+  </section>
+
+  <!-- =============================================================== GAME -->
+  <section id="screen-game" class="screen game-screen hidden">
+    <div id="map"></div>
+
+    <div class="hud-top">
+      <div class="status-chip">
+        <span class="dot-live" id="gps-dot"></span>
+        <span class="code" id="game-code">----</span>
+      </div>
+      <div class="role-badge" id="role-badge">
+        <div class="r" id="role-badge-text">PREY</div>
+        <div class="n" id="alive-count"></div>
+      </div>
+    </div>
+
+    <div class="timers" id="timers"></div>
+
+    <div class="log-drawer collapsed" id="log-drawer">
+      <div class="lh" id="log-toggle"><span>Field log</span><span id="log-caret">▲</span></div>
+      <div class="lb" id="log-body"></div>
+    </div>
+
+    <div class="bottom-bar" id="bottom-bar"></div>
+  </section>
+
+</div>
+
+<div class="toast-stack" id="toast-stack"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
