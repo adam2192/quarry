@@ -365,8 +365,9 @@ input { font-family: inherit; }
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 500;
   padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
   background: linear-gradient(0deg, rgba(5,5,6,0.96), rgba(5,5,6,0));
-  display: flex; gap: 10px; align-items: center;
+  display: flex; flex-direction: column; gap: 8px;
 }
+.bar-row { display: flex; gap: 10px; align-items: center; }
 .tag-btn {
   flex: 1; padding: 17px; border-radius: var(--radius-lg); border: none;
   font-family: var(--font-display); font-size: 16px; letter-spacing: 0.08em; text-transform: uppercase;
@@ -377,6 +378,15 @@ input { font-family: inherit; }
 .tag-btn .sub { display: block; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; text-transform: none; margin-top: 2px; opacity: 0.75; }
 .waiting-note { flex: 1; text-align: center; font-family: var(--font-mono); font-size: 12px; color: var(--steel); padding: 12px; }
 .icon-round { width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--line); background: rgba(12,15,18,0.92); color: var(--paper); font-size: 18px; cursor: pointer; flex-shrink: 0; }
+
+.catch-card { text-align: left; --frame-color: var(--imf-red-dim); }
+.catch-card .catch-title { font-family: var(--font-display); font-size: 20px; font-weight: 600; color: var(--paper); margin: 4px 0 16px; text-transform: uppercase; letter-spacing: 0.03em; }
+.catch-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; max-height: 40vh; overflow-y: auto; }
+.catch-row {
+  text-align: left; background: var(--panel-2); border: 1px solid var(--line); color: var(--paper);
+  padding: 14px 16px; border-radius: var(--radius); font-family: var(--font-body); font-size: 15px; cursor: pointer;
+}
+.catch-row:active { background: var(--imf-red-dim); border-color: var(--imf-red); }
 
 /* ------------------------------------------ map marker: target-lock reticle */
 
