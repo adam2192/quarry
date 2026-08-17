@@ -367,8 +367,8 @@
     renderBottomBar(room);
     renderMarkers(room, prevRevealAt);
 
-    if (room.status === 'over') renderResult(room);
-    else removeOverlay();
+    if (room.status === 'over' && !document.getElementById('recap-panel')) renderResult(room);
+    else if (room.status !== 'over') removeOverlay();
   }
 
   function renderTimers(room) {
@@ -584,9 +584,11 @@
         <div class="eyebrow">Hunt over</div>
         <div class="headline">${win === 'hunters' ? 'Hunters win' : win === 'prey' ? 'Prey win' : 'Called'}</div>
         <div class="sub">${room.log[0] ? escapeHtml(room.log[0].msg) : ''}</div>
+        <button class="btn btn-block" id="btn-view-recap" style="margin-bottom:10px;">View recap</button>
         ${you.isHost ? `<button class="btn btn-primary btn-block" id="btn-lobby-return">Back to lobby</button>` : `<div class="locked-note">Waiting for the host…</div>`}
       </div>`;
     document.body.appendChild(overlay);
+    document.getElementById('btn-view-recap').onclick = () => { overlay.remove(); openRecap(room); };
     if (you.isHost) {
       document.getElementById('btn-lobby-return').onclick = () => send({ type: 'backToLobby' });
     }
@@ -594,6 +596,70 @@
   function removeOverlay() {
     const overlay = document.getElementById('result-overlay');
     if (overlay) overlay.remove();
+  }
+
+  // -------------------------------------------------------------- recap
+
+  let recapLayer = null;
+  function openRecap(room) {
+    if (document.getElementById('recap-panel')) return;
+
+    // Hide the normal end-state markers/trails while the recap's own
+    // full-path lines are on screen, so the two don't overlap and confuse.
+    for (const [, rec] of markers) { map.removeLayer(rec.marker); map.removeLayer(rec.trail); }
+
+    recapLayer = L.layerGroup().addTo(map);
+    const bounds = [];
+    const withTrail = room.players.filter((p) => p.trail && p.trail.length > 1);
+    withTrail.forEach((p) => {
+      const role = p.finalRole || p.role;
+      const color = role === 'hunter' ? '#e8262f' : role === 'prey' ? '#2f8fe6' : '#7c8590';
+      const latlngs = p.trail.map((pt) => [pt.lat, pt.lng]);
+      latlngs.forEach((ll) => bounds.push(ll));
+      L.polyline(latlngs, { color, weight: 3, opacity: 0.75 }).addTo(recapLayer);
+      L.circleMarker(latlngs[0], { radius: 5, color, fillColor: '#050506', fillOpacity: 1, weight: 2 }).addTo(recapLayer);
+      L.marker(latlngs[latlngs.length - 1], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div class="mk ${role}"><span class="core"></span><span class="label">${escapeHtml(p.name)}</span></div>`,
+          iconSize: [26, 26], iconAnchor: [13, 13],
+        }),
+      }).addTo(recapLayer);
+    });
+    if (bounds.length) map.fitBounds(bounds, { padding: [50, 50] });
+
+    const panel = document.createElement('div');
+    panel.className = 'recap-panel';
+    panel.id = 'recap-panel';
+    panel.innerHTML = `
+      <div class="recap-top">
+        <div>
+          <div class="eyebrow">After-action recap</div>
+          <div class="recap-title">Full paths &amp; timeline</div>
+        </div>
+        <button class="icon-round" id="btn-recap-close">✕</button>
+      </div>
+      <div class="recap-legend">
+        ${withTrail.length ? withTrail.map((p) => `<span class="pill role-${p.finalRole || p.role}"><span class="dot"></span>${escapeHtml(p.name)}</span>`).join('')
+          : '<span class="locked-note">No movement was recorded this hunt.</span>'}
+      </div>
+      <div class="recap-timeline">
+        ${room.log.slice().reverse().map((l) => `
+          <div class="log-line ${l.kind}"><span class="t">${new Date(l.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>${escapeHtml(l.msg)}</div>
+        `).join('') || '<div class="log-line">No events logged.</div>'}
+      </div>`;
+    document.body.appendChild(panel);
+    document.getElementById('btn-recap-close').onclick = closeRecap;
+  }
+
+  function closeRecap(restoreView = true) {
+    const panel = document.getElementById('recap-panel');
+    if (panel) panel.remove();
+    if (recapLayer) { map.removeLayer(recapLayer); recapLayer = null; }
+    if (restoreView && state && state.room.status === 'over') {
+      renderMarkers(state.room, state.room.lastReveal && state.room.lastReveal.at);
+      renderResult(state.room);
+    }
   }
 
   // ------------------------------------------------------------- geolocation
@@ -649,6 +715,7 @@
     const { room } = state;
 
     if (room.status === 'lobby') {
+      closeRecap(false);
       showScreen('lobby');
       renderLobby();
     } else {
