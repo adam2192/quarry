@@ -164,10 +164,11 @@
               <div class="role-switch">
                 <button data-role-btn="hunter" data-pid="${p.id}" class="${p.role === 'hunter' ? 'on hunter' : ''}">Hunter</button>
                 <button data-role-btn="prey" data-pid="${p.id}" class="${p.role === 'prey' ? 'on prey' : ''}">Prey</button>
+                <button data-role-btn="spectator" data-pid="${p.id}" class="${p.role === 'spectator' ? 'on spectator' : ''}">Watch</button>
               </div>
               ${canKick ? `<button class="icon-btn" data-kick="${p.id}" title="Remove">✕</button>` : ''}
             ` : `
-              <span class="pill role-${p.role}"><span class="dot"></span>${p.role}</span>
+              <span class="pill role-${p.role}"><span class="dot"></span>${p.role === 'spectator' ? 'watching' : p.role}</span>
             `}
           </div>
         </div>`;
@@ -185,7 +186,8 @@
       ? `<button class="btn btn-ghost btn-sm" id="btn-shuffle">Shuffle roles</button>` : '';
     if (you.isHost) {
       els('btn-shuffle').onclick = () => {
-        const hunterCount = Math.max(1, Math.round(players.length / 4));
+        const eligible = players.filter((p) => p.role !== 'spectator').length;
+        const hunterCount = Math.max(1, Math.round(eligible / 4));
         send({ type: 'shuffle', hunterCount });
       };
     }
@@ -333,10 +335,11 @@
     els('game-code').textContent = room.code;
     const badge = els('role-badge');
     badge.className = 'role-badge ' + you.role;
-    els('role-badge-text').textContent = you.role.toUpperCase();
+    els('role-badge-text').textContent = you.role === 'spectator' ? 'WATCHING' : you.role.toUpperCase();
     const aliveHunters = room.players.filter((p) => p.role === 'hunter' && p.alive).length;
     const alivePrey = room.players.filter((p) => p.role === 'prey' && p.alive).length;
-    els('alive-count').textContent = `${aliveHunters}H / ${alivePrey}P live`;
+    const spectating = room.players.filter((p) => p.role === 'spectator').length;
+    els('alive-count').textContent = `${aliveHunters}H / ${alivePrey}P live` + (spectating ? ` · ${spectating} watching` : '');
 
     renderTimers(room);
     renderLog(room);
@@ -430,6 +433,8 @@
           Log a catch
           <span class="sub">tap who you caught in person</span>
         </button>`);
+    } else if (you.role === 'spectator') {
+      rows.push(`<div class="waiting-note">Just watching — you'll see the map on the same pings as everyone else.</div>`);
     } else if (!you.alive) {
       rows.push(`<div class="waiting-note">You're out — still watching the map.</div>`);
     } else {
@@ -609,7 +614,8 @@
       renderLobby();
     } else {
       showScreen('game');
-      startGeo();
+      // Spectators never need location — nothing to send, nothing to be seen.
+      if (you.role !== 'spectator') startGeo();
       requestWakeLock();
       renderGame(prevRevealAt);
     }
