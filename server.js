@@ -105,9 +105,7 @@ const living = (room, role) =>
 
 function startGame(room) {
   const now = Date.now();
-  const hunters = living(room, 'hunter').length;
-  const prey = living(room, 'prey').length;
-  if (!hunters || !prey) return 'Set at least one hunter and one prey first.';
+  if (!room.players.size) return 'Empty room — nothing to start.';
 
   room.status = 'running';
   room.startedAt = now;
