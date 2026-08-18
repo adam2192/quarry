@@ -22,9 +22,36 @@ const TICK_MS = 1000;
 const BROADCAST_EVERY_MS = 5000;   // heartbeat so "last seen" stays honest
 const ROOM_TTL_MS = 6 * 60 * 60 * 1000;
 
+// Site-wide kill switch. Flip this back to true (and redeploy) to bring
+// hunts.live back online — every bit of game logic below is untouched,
+// this just refuses to serve it to anyone while it's false.
+const SITE_ENABLED = false;
+
+const OFFLINE_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>404 — QUARRY</title>
+<style>
+  html,body{height:100%;margin:0;background:#050506;color:#edf1f4;
+    font-family:ui-monospace,'JetBrains Mono',monospace;
+    display:flex;align-items:center;justify-content:center;text-align:center}
+  .wrap{padding:24px}
+  h1{font-size:15px;letter-spacing:.18em;text-transform:uppercase;color:#7c8590;
+    font-weight:400;margin:0 0 10px}
+  p{font-size:14px;color:#43494f;margin:0}
+</style></head>
+<body><div class="wrap">
+  <h1>404 — no longer here</h1>
+  <p>This hunt has ended.</p>
+</div></body></html>`;
+
 const app = express();
-app.use(express.static(path.join(__dirname, 'public')));
-app.get('/health', (_req, res) => res.json({ ok: true, rooms: rooms.size }));
+app.get('/health', (_req, res) => res.json({ ok: true, siteEnabled: SITE_ENABLED, rooms: rooms.size }));
+if (SITE_ENABLED) {
+  app.use(express.static(path.join(__dirname, 'public')));
+} else {
+  app.use((_req, res) => res.status(404).type('html').send(OFFLINE_PAGE));
+}
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
@@ -279,6 +306,7 @@ function requireHost(room, player) {
 }
 
 wss.on('connection', (ws) => {
+  if (!SITE_ENABLED) { ws.close(1000, 'offline'); return; }
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
 
